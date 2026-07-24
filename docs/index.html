@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="doc_title">Conector Cisco Umbrella — Ruvic</title>
+  <link rel="stylesheet" href="assets/ruvic.css">
+</head>
+<body class="guide">
+  <div class="guide-shell">
+  <main class="ruvic-container">
+    <nav class="ruvic-toc" aria-label="Índice">
+      <h2 data-i18n="toc_title">Contenido</h2>
+      <ol>
+        <li><a href="#que-es" data-i18n="toc.que_es">¿Qué es y para qué sirve?</a></li>
+        <li><a href="#prerrequisitos" data-i18n="toc.prerrequisitos">Prerrequisitos</a></li>
+        <li><a href="#configuracion-fabricante" data-i18n="toc.configuracion_fabricante">Configuración en el fabricante</a></li>
+        <li><a href="#permisos" data-i18n="toc.permisos">Permisos requeridos</a></li>
+        <li><a href="#configuracion-ruvic" data-i18n="toc.configuracion_ruvic">Configuración en Ruvic</a></li>
+        <li><a href="#verificacion" data-i18n="toc.verificacion">Verificación</a></li>
+        <li><a href="#solucion-problemas" data-i18n="toc.solucion_problemas">Solución de problemas</a></li>
+        <li><a href="#faq-seguridad" data-i18n="toc.faq_seguridad">Preguntas frecuentes y notas de seguridad</a></li>
+      </ol>
+    </nav>
+
+    <h1 data-i18n="guide_title">Conector Cisco Umbrella — Guía de configuración</h1>
+    <p class="guide-updated">2026-07-24</p>
+
+    <section>
+      <h2 id="que-es" data-i18n="section.que_es">¿Qué es y para qué sirve?</h2>
+      <p data-i18n="section.que_es.body">El conector Cisco Umbrella permite que el agente de Ruvic use la plataforma de seguridad DNS y filtrado web de Cisco para investigar dominios, bloquearlos y revisar actividad reciente de la red. A diferencia de la mayoría de conectores, Umbrella no expone una sola API: combina tres APIs independientes, cada una con su propia credencial. Una vez configurado, puedes pedirle al agente cosas como:</p>
+      <ul>
+        <li data-i18n="section.que_es.li1">"Consulta la reputación de evil-example.com antes de que lo abramos."</li>
+        <li data-i18n="section.que_es.li2">"Bloquea el dominio phishing-falso.com en la política de la organización."</li>
+        <li data-i18n="section.que_es.li3">"¿Qué actividad DNS sospechosa hubo en las últimas 24 horas?"</li>
+      </ul>
+      <p data-i18n="section.que_es.ops_intro">Operaciones soportadas:</p>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.operacion">Operación</th>
+            <th data-i18n="table.que_hace">Qué hace</th>
+            <th data-i18n="table.api">API de Cisco Umbrella</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>security.query_domain</code></td>
+            <td data-i18n="section.que_es.op1">Consulta reputación y categorización de seguridad de un dominio (solo lectura)</td>
+            <td data-i18n="section.que_es.op1_api">Investigate API</td>
+          </tr>
+          <tr>
+            <td><code>security.add_to_blocklist</code></td>
+            <td data-i18n="section.que_es.op2">Agrega un dominio a la lista de bloqueo real de la organización (escribe datos)</td>
+            <td data-i18n="section.que_es.op2_api">Enforcement API</td>
+          </tr>
+          <tr>
+            <td><code>security.get_activity</code></td>
+            <td data-i18n="section.que_es.op3">Consulta actividad DNS/web reciente por ventana de tiempo (solo lectura)</td>
+            <td data-i18n="section.que_es.op3_api">Reporting API v2</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout callout-warning">
+        <span class="callout-title" data-i18n="section.que_es.callout_title">add_to_blocklist modifica datos reales</span>
+        <span data-i18n="section.que_es.callout_body">query_domain y get_activity son de solo lectura. add_to_blocklist SÍ escribe: agrega un destino real a la política de bloqueo de tu organización. El agente debe confirmar contigo antes de bloquear un dominio si no lo pediste explícitamente.</span>
+      </div>
+    </section>
+
+    <section>
+      <h2 id="prerrequisitos" data-i18n="section.prerrequisitos">Prerrequisitos</h2>
+      <ul>
+        <li data-i18n="section.prerrequisitos.li1">Una organización activa en <strong>Cisco Umbrella</strong> (paquete DNS Security Essentials/Advantage o Umbrella Secure Internet Gateway, según tu contrato).</li>
+        <li data-i18n="section.prerrequisitos.li2">Acceso de <strong>administrador</strong> al panel de Umbrella (dashboard.umbrella.com), al menos durante la configuración inicial, para generar las tres credenciales.</li>
+        <li data-i18n="section.prerrequisitos.li3">La <strong>Enforcement API habilitada</strong> en tu organización (algunos planes requieren activarla en Policies → Security Settings → Integrations antes de poder generar la Customer Key).</li>
+        <li data-i18n="section.prerrequisitos.li4">El <strong>Organization ID</strong> de tu cuenta de Umbrella.</li>
+        <li data-i18n="section.prerrequisitos.li5">Salida de red desde la plataforma Ruvic hacia los dominios <code>investigate.api.umbrella.com</code>, <code>s-platform.api.opendns.com</code> y <code>api.umbrella.com</code> (habitualmente sin restricciones adicionales, ya que Ruvic sale por HTTPS estándar).</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 id="configuracion-fabricante" data-i18n="section.configuracion_fabricante">Configuración en el fabricante</h2>
+      <p data-i18n="section.configuracion_fabricante.intro">Este conector usa <strong>tres APIs independientes</strong> de Cisco Umbrella, cada una con su propia credencial y su propio lugar en el panel. Genera las tres antes de pasar a la sección "Configuración en Ruvic". Si una falla, las otras dos capacidades del conector siguen funcionando con normalidad.</p>
+
+      <h3 data-i18n="section.configuracion_fabricante.api1_title">API 1 — Investigate (consultar reputación de dominios)</h3>
+      <p data-i18n="section.configuracion_fabricante.api1_used_by">Usada por: <code>query_domain</code>. Es de solo lectura.</p>
+      <ol class="ruvic-steps">
+        <li><strong data-i18n="step.1.label">Entra al panel de Umbrella:</strong> <span data-i18n="step.1.body">inicia sesión en <code>dashboard.umbrella.com</code> con una cuenta de administrador.</span></li>
+        <li><strong data-i18n="step.2.label">Ve a Admin → API Keys → Umbrella Investigate:</strong> <span data-i18n="step.2.body">en el menú lateral, abre <em>Admin</em> y luego <em>API Keys</em>; selecciona la pestaña o sección de <em>Umbrella Investigate</em>.</span></li>
+        <li><strong data-i18n="step.3.label">Crea el token:</strong> <span data-i18n="step.3.body">pulsa <em>Create</em> (o <em>Generate</em>) y copia el token generado de inmediato — Umbrella solo lo muestra una vez. Este token se usa como Bearer token.</span></li>
+      </ol>
+      <div class="screenshot-placeholder" data-i18n="img.investigate.placeholder">[ Captura: Admin → API Keys → Umbrella Investigate — reemplazar por assets/img/investigate-api-key.png ]</div>
+
+      <h3 data-i18n="section.configuracion_fabricante.api2_title">API 2 — Enforcement (agregar dominios a la lista de bloqueo)</h3>
+      <p data-i18n="section.configuracion_fabricante.api2_used_by">Usada por: <code>add_to_blocklist</code>. Escribe datos reales en la política de bloqueo.</p>
+      <ol class="ruvic-steps">
+        <li><strong data-i18n="step.4.label">Ve a Policies → Security Settings → Integrations:</strong> <span data-i18n="step.4.body">en el menú lateral, abre <em>Policies</em>, luego <em>Security Settings</em> y busca la sección <em>Integrations</em>.</span></li>
+        <li><strong data-i18n="step.5.label">Habilita la Enforcement API:</strong> <span data-i18n="step.5.body">pulsa <em>Enable</em> (si aún no está activa). Umbrella genera una <strong>Customer Key</strong> única para tu organización.</span></li>
+        <li><strong data-i18n="step.6.label">Copia la Customer Key:</strong> <span data-i18n="step.6.body">guárdala de inmediato en un gestor de contraseñas; es la credencial que autoriza escribir eventos de bloqueo.</span></li>
+      </ol>
+      <div class="screenshot-placeholder" data-i18n="img.enforcement.placeholder">[ Captura: Policies → Security Settings → Integrations → Enforcement API — reemplazar por assets/img/enforcement-key.png ]</div>
+
+      <h3 data-i18n="section.configuracion_fabricante.api3_title">API 3 — Reporting v2 (consultar actividad reciente)</h3>
+      <p data-i18n="section.configuracion_fabricante.api3_used_by">Usada por: <code>get_activity</code>. Es de solo lectura y usa OAuth2 client credentials.</p>
+      <ol class="ruvic-steps">
+        <li><strong data-i18n="step.7.label">Ve a Admin → API Keys → Umbrella Reporting/Management:</strong> <span data-i18n="step.7.body">en el menú lateral, abre <em>Admin</em> → <em>API Keys</em> y selecciona la sección de <em>Umbrella Reporting/Management</em>.</span></li>
+        <li><strong data-i18n="step.8.label">Crea una clave con rol Read-Only Reporting:</strong> <span data-i18n="step.8.body">pulsa <em>Create</em>, elige el alcance/rol <strong>Read-Only Reporting</strong> (no un rol de administración) y confirma.</span></li>
+        <li><strong data-i18n="step.9.label">Copia el par Key + Secret:</strong> <span data-i18n="step.9.body">Umbrella muestra un <em>Key</em> y un <em>Secret</em>; cópialos de inmediato, el Secret no vuelve a mostrarse completo. Con este par el conector obtiene un access token OAuth2 automáticamente.</span></li>
+      </ol>
+      <div class="screenshot-placeholder" data-i18n="img.reporting.placeholder">[ Captura: Admin → API Keys → Umbrella Reporting/Management — reemplazar por assets/img/reporting-key.png ]</div>
+
+      <h3 data-i18n="section.configuracion_fabricante.orgid_title">Organization ID</h3>
+      <p data-i18n="section.configuracion_fabricante.orgid_body">Visible en <strong>Admin → Account Settings</strong>, o en la propia URL del dashboard cuando navegas dentro de tu organización (patrón <code>/o/&lt;org_id&gt;/</code>). Es un número, no una credencial secreta, pero es obligatorio para <code>get_activity</code>.</p>
+    </section>
+
+    <section>
+      <h2 id="permisos" data-i18n="section.permisos">Permisos requeridos</h2>
+      <p data-i18n="section.permisos.intro">Principio de mínimo privilegio: cada una de las tres credenciales solo necesita el alcance mínimo para su capacidad. No uses cuentas ni roles con permisos de administración general de la organización.</p>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.credencial">Credencial</th>
+            <th data-i18n="table.alcance_minimo">Alcance mínimo</th>
+            <th data-i18n="table.para_que">Para qué la usa el conector</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-i18n="permisos.investigate.cred">Investigate API Key</td>
+            <td data-i18n="permisos.investigate.scope">Solo lectura — consulta de reputación/categorización, sin acceso a políticas ni usuarios</td>
+            <td><code>query_domain</code></td>
+          </tr>
+          <tr>
+            <td data-i18n="permisos.enforcement.cred">Enforcement Customer Key</td>
+            <td data-i18n="permisos.enforcement.scope">Agregar destinos a la lista de bloqueo únicamente; no administra políticas completas ni usuarios de la organización</td>
+            <td><code>add_to_blocklist</code></td>
+          </tr>
+          <tr>
+            <td data-i18n="permisos.reporting.cred">Reporting Key + Secret</td>
+            <td data-i18n="permisos.reporting.scope">Rol <strong>Read-Only Reporting</strong> — sin permisos de administración de la organización</td>
+            <td><code>get_activity</code></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout callout-info">
+        <span class="callout-title" data-i18n="permisos.callout_title">Credenciales independientes</span>
+        <span data-i18n="permisos.callout_body">Las tres credenciales son independientes entre sí: si una falla o se revoca, las capacidades basadas en las otras dos siguen funcionando con normalidad.</span>
+      </div>
+    </section>
+
+    <section>
+      <h2 id="configuracion-ruvic" data-i18n="section.configuracion_ruvic">Configuración en Ruvic</h2>
+      <p data-i18n="configuracion_ruvic.intro">Entra a <strong>Settings → Conectores</strong>, busca la tarjeta <strong>Cisco Umbrella</strong> y pulsa <strong>Configurar</strong>. Diligencia el formulario con los seis campos, usando los valores que obtuviste en la sección anterior:</p>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.campo_formulario">Campo del formulario</th>
+            <th data-i18n="table.valor">Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-i18n="ruvic.field.investigate">Investigate API Key</td>
+            <td data-i18n="ruvic.field.investigate.value">El token generado en Admin → API Keys → Umbrella Investigate (paso 3 de la sección anterior)</td>
+          </tr>
+          <tr>
+            <td data-i18n="ruvic.field.enforcement">Enforcement Customer Key</td>
+            <td data-i18n="ruvic.field.enforcement.value">La Customer Key de Policies → Security Settings → Integrations → Enforcement API</td>
+          </tr>
+          <tr>
+            <td data-i18n="ruvic.field.reporting_key">Reporting API Key</td>
+            <td data-i18n="ruvic.field.reporting_key.value">El Key del par generado con rol Read-Only Reporting</td>
+          </tr>
+          <tr>
+            <td data-i18n="ruvic.field.reporting_secret">Reporting API Secret</td>
+            <td data-i18n="ruvic.field.reporting_secret.value">El Secret del mismo par. Se guarda cifrado como secreto: la interfaz no volverá a mostrarlo</td>
+          </tr>
+          <tr>
+            <td data-i18n="ruvic.field.org_id">Organization ID</td>
+            <td data-i18n="ruvic.field.org_id.value">El ID de tu organización (Admin → Account Settings o URL del dashboard)</td>
+          </tr>
+          <tr>
+            <td data-i18n="ruvic.field.timeout">Timeout de conexión</td>
+            <td data-i18n="ruvic.field.timeout.value">Opcional; <code>15</code> segundos por defecto</td>
+          </tr>
+        </tbody>
+      </table>
+      <p data-i18n="ruvic.save_body">Guarda y pulsa <span class="ruvic-button">Probar conexión</span> — la plataforma consulta un dominio de referencia (<code>cisco.com</code>) vía la Investigate API para confirmar que al menos esa credencial funciona.</p>
+      <div class="screenshot-placeholder" data-i18n="img.ruvic_form.placeholder">[ Captura: formulario del conector Cisco Umbrella en Settings → Conectores — reemplazar por assets/img/umbrella-form.png ]</div>
+    </section>
+
+    <section>
+      <h2 id="verificacion" data-i18n="section.verificacion">Verificación</h2>
+      <ol class="ruvic-steps">
+        <li>
+          <strong data-i18n="verif.1.label">Test de conexión exitoso.</strong>
+          <p data-i18n="verif.1.body">El botón <em>Probar conexión</em> hace un <code>query_domain("cisco.com")</code> vía la Investigate API. Si responde con datos de categorización, la tarjeta del conector cambia a estado <strong>Configurado</strong>. Este test solo valida la Investigate API Key; las otras dos credenciales se validan al usarlas por primera vez.</p>
+        </li>
+        <li>
+          <strong data-i18n="verif.2.label">Prueba con el agente.</strong>
+          <p data-i18n="verif.2.body">Abre una conversación nueva con el agente y pídele:</p>
+          <blockquote data-i18n="verif.2.quote">"Consulta la reputación del dominio cisco.com en Umbrella."</blockquote>
+          <p data-i18n="verif.2.body2">El agente debe responder con el <code>status</code> (-1 malicioso, 0 desconocido, 1 benigno) y las categorías de seguridad, si las hay. Si lo hace, la Investigate API quedó operativa de punta a punta.</p>
+        </li>
+        <li>
+          <strong data-i18n="verif.3.label">Prueba opcional de las otras dos APIs.</strong>
+          <p data-i18n="verif.3.body">Pide al agente "revisa la actividad de la red en las últimas 24 horas" para validar la Reporting API. Prueba <code>add_to_blocklist</code> solo con un dominio de prueba y solo si entiendes que modifica la política real de bloqueo.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2 id="solucion-problemas" data-i18n="section.solucion_problemas">Solución de problemas</h2>
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="table.mensaje_sintoma">Mensaje / síntoma</th>
+            <th data-i18n="table.causa_solucion">Causa probable y solución</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-i18n="troubleshoot.1.symptom">"Credenciales inválidas o sin permiso suficiente" al consultar un dominio</td>
+            <td data-i18n="troubleshoot.1.fix">Falla la Investigate API Key: expiró, se revocó o se copió mal. Genera un nuevo token en Admin → API Keys → Umbrella Investigate y actualízalo en el formulario del conector.</td>
+          </tr>
+          <tr>
+            <td data-i18n="troubleshoot.2.symptom">"Credenciales inválidas" al intentar bloquear un dominio, aunque query_domain funciona</td>
+            <td data-i18n="troubleshoot.2.fix">Falla la Enforcement Customer Key específicamente (las tres credenciales son independientes). Verifica que la Enforcement API siga habilitada en Policies → Security Settings → Integrations y que la key en Ruvic sea la correcta.</td>
+          </tr>
+          <tr>
+            <td data-i18n="troubleshoot.3.symptom">"Credenciales inválidas" al consultar actividad reciente, aunque las otras dos capacidades funcionan</td>
+            <td data-i18n="troubleshoot.3.fix">El par Reporting Key/Secret es incorrecto o el rol no es Read-Only Reporting. Regenera el par en Admin → API Keys → Umbrella Reporting/Management y actualiza ambos campos en el formulario.</td>
+          </tr>
+          <tr>
+            <td data-i18n="troubleshoot.4.symptom">Token OAuth2 de Reporting expirado o inválido en medio de una sesión larga</td>
+            <td data-i18n="troubleshoot.4.fix">El conector renueva el access token automáticamente 30 segundos antes de expirar; si el error persiste, el Reporting Key/Secret configurado ya no es válido — regenéralo siguiendo el punto anterior.</td>
+          </tr>
+          <tr>
+            <td data-i18n="troubleshoot.5.symptom">"No se pudo alcanzar Cisco Umbrella" (timeout de red)</td>
+            <td data-i18n="troubleshoot.5.fix">La plataforma Ruvic no pudo conectar a tiempo con investigate.api.umbrella.com, s-platform.api.opendns.com o api.umbrella.com. Reintenta; si persiste, aumenta el timeout de conexión en el formulario o revisa el estado de servicio de Cisco Umbrella.</td>
+          </tr>
+          <tr>
+            <td data-i18n="troubleshoot.6.symptom">El conector aparece "Sin configurar" tras guardar</td>
+            <td data-i18n="troubleshoot.6.fix">Algún campo obligatorio quedó vacío (los seis campos excepto el timeout son requeridos). Ábrelo de nuevo y completa investigate_api_key, enforcement_customer_key, reporting_key, reporting_secret y org_id.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2 id="faq-seguridad" data-i18n="section.faq_seguridad">Preguntas frecuentes y notas de seguridad</h2>
+
+      <h3 data-i18n="faq.q1">¿El agente puede modificar mi política de seguridad sin que yo lo sepa?</h3>
+      <p data-i18n="faq.a1">Solo a través de <code>add_to_blocklist</code>, que agrega un dominio real a la lista de bloqueo de tu organización. El SKILL del conector instruye al agente a confirmar contigo antes de ejecutar esta acción si no la pediste explícitamente, y a mostrarte primero el resultado de <code>query_domain</code> cuando sea razonable. <code>query_domain</code> y <code>get_activity</code> son estrictamente de solo lectura y nunca modifican tu configuración.</p>
+
+      <h3 data-i18n="faq.q2">¿Dónde quedan guardadas las tres credenciales?</h3>
+      <p data-i18n="faq.a2">Como secretos en el almacén de credenciales de la plataforma, asociados a tu usuario. La interfaz nunca vuelve a mostrarlas completas; solo indica "definida". Para cambiar una, escribe el nuevo valor en el campo correspondiente; para conservar las demás, déjalas vacías al editar.</p>
+
+      <h3 data-i18n="faq.q3">¿Cómo roto cada credencial?</h3>
+      <div data-i18n="faq.a3">
+        <ul>
+          <li><strong>Investigate API Key:</strong> genera un nuevo token en Admin → API Keys → Umbrella Investigate y revoca el anterior; actualízalo en el formulario del conector.</li>
+          <li><strong>Enforcement Customer Key:</strong> se rota deshabilitando y volviendo a habilitar la Enforcement API en Policies → Security Settings → Integrations (genera una nueva Customer Key).</li>
+          <li><strong>Reporting Key/Secret:</strong> crea un nuevo par en Admin → API Keys → Umbrella Reporting/Management con rol Read-Only Reporting, actualízalo en Ruvic, y luego revoca el par anterior.</li>
+        </ul>
+      </div>
+      <p data-i18n="faq.a3b">Recomendado rotar cada credencial cada 90 días o según tu política de seguridad interna.</p>
+
+      <h3 data-i18n="faq.q4">Se comprometió una de las tres credenciales, ¿qué hago?</h3>
+      <div data-i18n="faq.a4">
+        <ol>
+          <li>Revoca de inmediato esa credencial específica en el panel de Umbrella (las otras dos no se ven afectadas, son independientes).</li>
+          <li>Revisa la actividad reciente asociada en los registros de Umbrella (Reporting o el log de eventos de Enforcement, según el caso).</li>
+          <li>Genera una credencial nueva siguiendo los pasos de la sección "Configuración en el fabricante" y actualízala en el formulario del conector.</li>
+          <li>Si la credencial comprometida era la Enforcement Customer Key, verifica que no se hayan agregado bloqueos no autorizados a tu política.</li>
+        </ol>
+      </div>
+
+      <h3 data-i18n="faq.q5">¿add_to_blocklist afecta a usuarios reales de mi red?</h3>
+      <p data-i18n="faq.a5">Sí. Agregar un dominio a la lista de bloqueo mediante la Enforcement API modifica la política de seguridad real que aplica Umbrella a los dispositivos y usuarios de tu organización: cualquier intento de acceder a ese dominio será bloqueado de inmediato. No es una simulación ni un entorno de prueba.</p>
+
+      <div class="callout callout-warning">
+        <span class="callout-title" data-i18n="faq.callout_title">Buenas prácticas</span>
+        <span data-i18n="faq.callout_body">Genera cada credencial con el alcance mínimo indicado en la sección de permisos; nunca compartas las claves por canales no seguros; revisa periódicamente los eventos agregados con add_to_blocklist; y trata cualquier compromiso de una credencial como un incidente de seguridad independiente de las otras dos.</span>
+      </div>
+    </section>
+  </main>
+  </div>
+
+  <script>
+    const I18N = {
+      es: {
+        doc_title: "Conector Cisco Umbrella — Ruvic",
+        guide_title: "Conector Cisco Umbrella — Guía de configuración",
+        toc_title: "Contenido",
+        "toc.que_es": "¿Qué es y para qué sirve?",
+        "toc.prerrequisitos": "Prerrequisitos",
+        "toc.configuracion_fabricante": "Configuración en el fabricante",
+        "toc.permisos": "Permisos requeridos",
+        "toc.configuracion_ruvic": "Configuración en Ruvic",
+        "toc.verificacion": "Verificación",
+        "toc.solucion_problemas": "Solución de problemas",
+        "toc.faq_seguridad": "Preguntas frecuentes y notas de seguridad",
+
+        "section.que_es": "¿Qué es y para qué sirve?",
+        "section.que_es.body": "El conector Cisco Umbrella permite que el agente de Ruvic use la plataforma de seguridad DNS y filtrado web de Cisco para investigar dominios, bloquearlos y revisar actividad reciente de la red. A diferencia de la mayoría de conectores, Umbrella no expone una sola API: combina tres APIs independientes, cada una con su propia credencial. Una vez configurado, puedes pedirle al agente cosas como:",
+        "section.que_es.li1": "\"Consulta la reputación de evil-example.com antes de que lo abramos.\"",
+        "section.que_es.li2": "\"Bloquea el dominio phishing-falso.com en la política de la organización.\"",
+        "section.que_es.li3": "\"¿Qué actividad DNS sospechosa hubo en las últimas 24 horas?\"",
+        "section.que_es.ops_intro": "Operaciones soportadas:",
+        "table.operacion": "Operación",
+        "table.que_hace": "Qué hace",
+        "table.api": "API de Cisco Umbrella",
+        "section.que_es.op1": "Consulta reputación y categorización de seguridad de un dominio (solo lectura)",
+        "section.que_es.op1_api": "Investigate API",
+        "section.que_es.op2": "Agrega un dominio a la lista de bloqueo real de la organización (escribe datos)",
+        "section.que_es.op2_api": "Enforcement API",
+        "section.que_es.op3": "Consulta actividad DNS/web reciente por ventana de tiempo (solo lectura)",
+        "section.que_es.op3_api": "Reporting API v2",
+        "section.que_es.callout_title": "add_to_blocklist modifica datos reales",
+        "section.que_es.callout_body": "query_domain y get_activity son de solo lectura. add_to_blocklist SÍ escribe: agrega un destino real a la política de bloqueo de tu organización. El agente debe confirmar contigo antes de bloquear un dominio si no lo pediste explícitamente.",
+
+        "section.prerrequisitos": "Prerrequisitos",
+        "section.prerrequisitos.li1": "Una organización activa en <strong>Cisco Umbrella</strong> (paquete DNS Security Essentials/Advantage o Umbrella Secure Internet Gateway, según tu contrato).",
+        "section.prerrequisitos.li2": "Acceso de <strong>administrador</strong> al panel de Umbrella (dashboard.umbrella.com), al menos durante la configuración inicial, para generar las tres credenciales.",
+        "section.prerrequisitos.li3": "La <strong>Enforcement API habilitada</strong> en tu organización (algunos planes requieren activarla en Policies → Security Settings → Integrations antes de poder generar la Customer Key).",
+        "section.prerrequisitos.li4": "El <strong>Organization ID</strong> de tu cuenta de Umbrella.",
+        "section.prerrequisitos.li5": "Salida de red desde la plataforma Ruvic hacia los dominios <code>investigate.api.umbrella.com</code>, <code>s-platform.api.opendns.com</code> y <code>api.umbrella.com</code> (habitualmente sin restricciones adicionales, ya que Ruvic sale por HTTPS estándar).",
+
+        "section.configuracion_fabricante": "Configuración en el fabricante",
+        "section.configuracion_fabricante.intro": "Este conector usa <strong>tres APIs independientes</strong> de Cisco Umbrella, cada una con su propia credencial y su propio lugar en el panel. Genera las tres antes de pasar a la sección \"Configuración en Ruvic\". Si una falla, las otras dos capacidades del conector siguen funcionando con normalidad.",
+        "section.configuracion_fabricante.api1_title": "API 1 — Investigate (consultar reputación de dominios)",
+        "section.configuracion_fabricante.api1_used_by": "Usada por: <code>query_domain</code>. Es de solo lectura.",
+        "step.1.label": "Entra al panel de Umbrella:",
+        "step.1.body": "inicia sesión en <code>dashboard.umbrella.com</code> con una cuenta de administrador.",
+        "step.2.label": "Ve a Admin → API Keys → Umbrella Investigate:",
+        "step.2.body": "en el menú lateral, abre <em>Admin</em> y luego <em>API Keys</em>; selecciona la pestaña o sección de <em>Umbrella Investigate</em>.",
+        "step.3.label": "Crea el token:",
+        "step.3.body": "pulsa <em>Create</em> (o <em>Generate</em>) y copia el token generado de inmediato — Umbrella solo lo muestra una vez. Este token se usa como Bearer token.",
+        "img.investigate.placeholder": "[ Captura: Admin → API Keys → Umbrella Investigate — reemplazar por assets/img/investigate-api-key.png ]",
+
+        "section.configuracion_fabricante.api2_title": "API 2 — Enforcement (agregar dominios a la lista de bloqueo)",
+        "section.configuracion_fabricante.api2_used_by": "Usada por: <code>add_to_blocklist</code>. Escribe datos reales en la política de bloqueo.",
+        "step.4.label": "Ve a Policies → Security Settings → Integrations:",
+        "step.4.body": "en el menú lateral, abre <em>Policies</em>, luego <em>Security Settings</em> y busca la sección <em>Integrations</em>.",
+        "step.5.label": "Habilita la Enforcement API:",
+        "step.5.body": "pulsa <em>Enable</em> (si aún no está activa). Umbrella genera una <strong>Customer Key</strong> única para tu organización.",
+        "step.6.label": "Copia la Customer Key:",
+        "step.6.body": "guárdala de inmediato en un gestor de contraseñas; es la credencial que autoriza escribir eventos de bloqueo.",
+        "img.enforcement.placeholder": "[ Captura: Policies → Security Settings → Integrations → Enforcement API — reemplazar por assets/img/enforcement-key.png ]",
+
+        "section.configuracion_fabricante.api3_title": "API 3 — Reporting v2 (consultar actividad reciente)",
+        "section.configuracion_fabricante.api3_used_by": "Usada por: <code>get_activity</code>. Es de solo lectura y usa OAuth2 client credentials.",
+        "step.7.label": "Ve a Admin → API Keys → Umbrella Reporting/Management:",
+        "step.7.body": "en el menú lateral, abre <em>Admin</em> → <em>API Keys</em> y selecciona la sección de <em>Umbrella Reporting/Management</em>.",
+        "step.8.label": "Crea una clave con rol Read-Only Reporting:",
+        "step.8.body": "pulsa <em>Create</em>, elige el alcance/rol <strong>Read-Only Reporting</strong> (no un rol de administración) y confirma.",
+        "step.9.label": "Copia el par Key + Secret:",
+        "step.9.body": "Umbrella muestra un <em>Key</em> y un <em>Secret</em>; cópialos de inmediato, el Secret no vuelve a mostrarse completo. Con este par el conector obtiene un access token OAuth2 automáticamente.",
+        "img.reporting.placeholder": "[ Captura: Admin → API Keys → Umbrella Reporting/Management — reemplazar por assets/img/reporting-key.png ]",
+
+        "section.configuracion_fabricante.orgid_title": "Organization ID",
+        "section.configuracion_fabricante.orgid_body": "Visible en <strong>Admin → Account Settings</strong>, o en la propia URL del dashboard cuando navegas dentro de tu organización (patrón <code>/o/&lt;org_id&gt;/</code>). Es un número, no una credencial secreta, pero es obligatorio para <code>get_activity</code>.",
+
+        "section.permisos": "Permisos requeridos",
+        "section.permisos.intro": "Principio de mínimo privilegio: cada una de las tres credenciales solo necesita el alcance mínimo para su capacidad. No uses cuentas ni roles con permisos de administración general de la organización.",
+        "table.credencial": "Credencial",
+        "table.alcance_minimo": "Alcance mínimo",
+        "table.para_que": "Para qué la usa el conector",
+        "permisos.investigate.cred": "Investigate API Key",
+        "permisos.investigate.scope": "Solo lectura — consulta de reputación/categorización, sin acceso a políticas ni usuarios",
+        "permisos.enforcement.cred": "Enforcement Customer Key",
+        "permisos.enforcement.scope": "Agregar destinos a la lista de bloqueo únicamente; no administra políticas completas ni usuarios de la organización",
+        "permisos.reporting.cred": "Reporting Key + Secret",
+        "permisos.reporting.scope": "Rol <strong>Read-Only Reporting</strong> — sin permisos de administración de la organización",
+        "permisos.callout_title": "Credenciales independientes",
+        "permisos.callout_body": "Las tres credenciales son independientes entre sí: si una falla o se revoca, las capacidades basadas en las otras dos siguen funcionando con normalidad.",
+
+        "section.configuracion_ruvic": "Configuración en Ruvic",
+        "configuracion_ruvic.intro": "Entra a <strong>Settings → Conectores</strong>, busca la tarjeta <strong>Cisco Umbrella</strong> y pulsa <strong>Configurar</strong>. Diligencia el formulario con los seis campos, usando los valores que obtuviste en la sección anterior:",
+        "table.campo_formulario": "Campo del formulario",
+        "table.valor": "Valor",
+        "ruvic.field.investigate": "Investigate API Key",
+        "ruvic.field.investigate.value": "El token generado en Admin → API Keys → Umbrella Investigate (paso 3 de la sección anterior)",
+        "ruvic.field.enforcement": "Enforcement Customer Key",
+        "ruvic.field.enforcement.value": "La Customer Key de Policies → Security Settings → Integrations → Enforcement API",
+        "ruvic.field.reporting_key": "Reporting API Key",
+        "ruvic.field.reporting_key.value": "El Key del par generado con rol Read-Only Reporting",
+        "ruvic.field.reporting_secret": "Reporting API Secret",
+        "ruvic.field.reporting_secret.value": "El Secret del mismo par. Se guarda cifrado como secreto: la interfaz no volverá a mostrarlo",
+        "ruvic.field.org_id": "Organization ID",
+        "ruvic.field.org_id.value": "El ID de tu organización (Admin → Account Settings o URL del dashboard)",
+        "ruvic.field.timeout": "Timeout de conexión",
+        "ruvic.field.timeout.value": "Opcional; <code>15</code> segundos por defecto",
+        "ruvic.save_body": "Guarda y pulsa <span class=\"ruvic-button\">Probar conexión</span> — la plataforma consulta un dominio de referencia (<code>cisco.com</code>) vía la Investigate API para confirmar que al menos esa credencial funciona.",
+        "img.ruvic_form.placeholder": "[ Captura: formulario del conector Cisco Umbrella en Settings → Conectores — reemplazar por assets/img/umbrella-form.png ]",
+
+        "section.verificacion": "Verificación",
+        "verif.1.label": "Test de conexión exitoso.",
+        "verif.1.body": "El botón <em>Probar conexión</em> hace un <code>query_domain(\"cisco.com\")</code> vía la Investigate API. Si responde con datos de categorización, la tarjeta del conector cambia a estado <strong>Configurado</strong>. Este test solo valida la Investigate API Key; las otras dos credenciales se validan al usarlas por primera vez.",
+        "verif.2.label": "Prueba con el agente.",
+        "verif.2.body": "Abre una conversación nueva con el agente y pídele:",
+        "verif.2.quote": "\"Consulta la reputación del dominio cisco.com en Umbrella.\"",
+        "verif.2.body2": "El agente debe responder con el <code>status</code> (-1 malicioso, 0 desconocido, 1 benigno) y las categorías de seguridad, si las hay. Si lo hace, la Investigate API quedó operativa de punta a punta.",
+        "verif.3.label": "Prueba opcional de las otras dos APIs.",
+        "verif.3.body": "Pide al agente \"revisa la actividad de la red en las últimas 24 horas\" para validar la Reporting API. Prueba <code>add_to_blocklist</code> solo con un dominio de prueba y solo si entiendes que modifica la política real de bloqueo.",
+
+        "section.solucion_problemas": "Solución de problemas",
+        "table.mensaje_sintoma": "Mensaje / síntoma",
+        "table.causa_solucion": "Causa probable y solución",
+        "troubleshoot.1.symptom": "\"Credenciales inválidas o sin permiso suficiente\" al consultar un dominio",
+        "troubleshoot.1.fix": "Falla la Investigate API Key: expiró, se revocó o se copió mal. Genera un nuevo token en Admin → API Keys → Umbrella Investigate y actualízalo en el formulario del conector.",
+        "troubleshoot.2.symptom": "\"Credenciales inválidas\" al intentar bloquear un dominio, aunque query_domain funciona",
+        "troubleshoot.2.fix": "Falla la Enforcement Customer Key específicamente (las tres credenciales son independientes). Verifica que la Enforcement API siga habilitada en Policies → Security Settings → Integrations y que la key en Ruvic sea la correcta.",
+        "troubleshoot.3.symptom": "\"Credenciales inválidas\" al consultar actividad reciente, aunque las otras dos capacidades funcionan",
+        "troubleshoot.3.fix": "El par Reporting Key/Secret es incorrecto o el rol no es Read-Only Reporting. Regenera el par en Admin → API Keys → Umbrella Reporting/Management y actualiza ambos campos en el formulario.",
+        "troubleshoot.4.symptom": "Token OAuth2 de Reporting expirado o inválido en medio de una sesión larga",
+        "troubleshoot.4.fix": "El conector renueva el access token automáticamente 30 segundos antes de expirar; si el error persiste, el Reporting Key/Secret configurado ya no es válido — regenéralo siguiendo el punto anterior.",
+        "troubleshoot.5.symptom": "\"No se pudo alcanzar Cisco Umbrella\" (timeout de red)",
+        "troubleshoot.5.fix": "La plataforma Ruvic no pudo conectar a tiempo con investigate.api.umbrella.com, s-platform.api.opendns.com o api.umbrella.com. Reintenta; si persiste, aumenta el timeout de conexión en el formulario o revisa el estado de servicio de Cisco Umbrella.",
+        "troubleshoot.6.symptom": "El conector aparece \"Sin configurar\" tras guardar",
+        "troubleshoot.6.fix": "Algún campo obligatorio quedó vacío (los seis campos excepto el timeout son requeridos). Ábrelo de nuevo y completa investigate_api_key, enforcement_customer_key, reporting_key, reporting_secret y org_id.",
+
+        "section.faq_seguridad": "Preguntas frecuentes y notas de seguridad",
+        "faq.q1": "¿El agente puede modificar mi política de seguridad sin que yo lo sepa?",
+        "faq.a1": "Solo a través de <code>add_to_blocklist</code>, que agrega un dominio real a la lista de bloqueo de tu organización. El SKILL del conector instruye al agente a confirmar contigo antes de ejecutar esta acción si no la pediste explícitamente, y a mostrarte primero el resultado de <code>query_domain</code> cuando sea razonable. <code>query_domain</code> y <code>get_activity</code> son estrictamente de solo lectura y nunca modifican tu configuración.",
+        "faq.q2": "¿Dónde quedan guardadas las tres credenciales?",
+        "faq.a2": "Como secretos en el almacén de credenciales de la plataforma, asociados a tu usuario. La interfaz nunca vuelve a mostrarlas completas; solo indica \"definida\". Para cambiar una, escribe el nuevo valor en el campo correspondiente; para conservar las demás, déjalas vacías al editar.",
+        "faq.q3": "¿Cómo roto cada credencial?",
+        "faq.a3": "<ul><li><strong>Investigate API Key:</strong> genera un nuevo token en Admin → API Keys → Umbrella Investigate y revoca el anterior; actualízalo en el formulario del conector.</li><li><strong>Enforcement Customer Key:</strong> se rota deshabilitando y volviendo a habilitar la Enforcement API en Policies → Security Settings → Integrations (genera una nueva Customer Key).</li><li><strong>Reporting Key/Secret:</strong> crea un nuevo par en Admin → API Keys → Umbrella Reporting/Management con rol Read-Only Reporting, actualízalo en Ruvic, y luego revoca el par anterior.</li></ul>",
+        "faq.a3b": "Recomendado rotar cada credencial cada 90 días o según tu política de seguridad interna.",
+        "faq.q4": "Se comprometió una de las tres credenciales, ¿qué hago?",
+        "faq.a4": "<ol><li>Revoca de inmediato esa credencial específica en el panel de Umbrella (las otras dos no se ven afectadas, son independientes).</li><li>Revisa la actividad reciente asociada en los registros de Umbrella (Reporting o el log de eventos de Enforcement, según el caso).</li><li>Genera una credencial nueva siguiendo los pasos de la sección \"Configuración en el fabricante\" y actualízala en el formulario del conector.</li><li>Si la credencial comprometida era la Enforcement Customer Key, verifica que no se hayan agregado bloqueos no autorizados a tu política.</li></ol>",
+        "faq.q5": "¿add_to_blocklist afecta a usuarios reales de mi red?",
+        "faq.a5": "Sí. Agregar un dominio a la lista de bloqueo mediante la Enforcement API modifica la política de seguridad real que aplica Umbrella a los dispositivos y usuarios de tu organización: cualquier intento de acceder a ese dominio será bloqueado de inmediato. No es una simulación ni un entorno de prueba.",
+        "faq.callout_title": "Buenas prácticas",
+        "faq.callout_body": "Genera cada credencial con el alcance mínimo indicado en la sección de permisos; nunca compartas las claves por canales no seguros; revisa periódicamente los eventos agregados con add_to_blocklist; y trata cualquier compromiso de una credencial como un incidente de seguridad independiente de las otras dos.",
+      },
+      en: {
+        doc_title: "Cisco Umbrella Connector — Ruvic",
+        guide_title: "Cisco Umbrella Connector — Setup Guide",
+        toc_title: "Contents",
+        "toc.que_es": "What it is and what it's for",
+        "toc.prerrequisitos": "Prerequisites",
+        "toc.configuracion_fabricante": "Vendor / provider setup",
+        "toc.permisos": "Required permissions",
+        "toc.configuracion_ruvic": "Configuration in Ruvic",
+        "toc.verificacion": "Verification",
+        "toc.solucion_problemas": "Troubleshooting",
+        "toc.faq_seguridad": "FAQ and security notes",
+
+        "section.que_es": "What it is and what it's for",
+        "section.que_es.body": "The Cisco Umbrella connector lets the Ruvic agent use Cisco's DNS security and web filtering platform to investigate domains, block them, and review recent network activity. Unlike most connectors, Umbrella doesn't expose a single API: it combines three independent APIs, each with its own credential. Once configured, you can ask the agent things like:",
+        "section.que_es.li1": "\"Check the reputation of evil-example.com before we open it.\"",
+        "section.que_es.li2": "\"Block the domain fake-phishing.com in the organization's policy.\"",
+        "section.que_es.li3": "\"What suspicious DNS activity happened in the last 24 hours?\"",
+        "section.que_es.ops_intro": "Supported operations:",
+        "table.operacion": "Operation",
+        "table.que_hace": "What it does",
+        "table.api": "Cisco Umbrella API",
+        "section.que_es.op1": "Queries a domain's security reputation and categorization (read-only)",
+        "section.que_es.op1_api": "Investigate API",
+        "section.que_es.op2": "Adds a domain to the organization's real block list (writes data)",
+        "section.que_es.op2_api": "Enforcement API",
+        "section.que_es.op3": "Queries recent DNS/web activity for a time window (read-only)",
+        "section.que_es.op3_api": "Reporting API v2",
+        "section.que_es.callout_title": "add_to_blocklist changes real data",
+        "section.que_es.callout_body": "query_domain and get_activity are read-only. add_to_blocklist DOES write: it adds a real destination to your organization's block policy. The agent should confirm with you before blocking a domain if you didn't explicitly ask for it.",
+
+        "section.prerrequisitos": "Prerequisites",
+        "section.prerrequisitos.li1": "An active <strong>Cisco Umbrella</strong> organization (DNS Security Essentials/Advantage package or Umbrella Secure Internet Gateway, depending on your contract).",
+        "section.prerrequisitos.li2": "<strong>Administrator</strong> access to the Umbrella dashboard (dashboard.umbrella.com), at least during initial setup, to generate the three credentials.",
+        "section.prerrequisitos.li3": "The <strong>Enforcement API enabled</strong> for your organization (some plans require activating it under Policies → Security Settings → Integrations before you can generate the Customer Key).",
+        "section.prerrequisitos.li4": "Your Umbrella account's <strong>Organization ID</strong>.",
+        "section.prerrequisitos.li5": "Network egress from the Ruvic platform to <code>investigate.api.umbrella.com</code>, <code>s-platform.api.opendns.com</code> and <code>api.umbrella.com</code> (usually no extra restrictions needed, since Ruvic egresses over standard HTTPS).",
+
+        "section.configuracion_fabricante": "Vendor / provider setup",
+        "section.configuracion_fabricante.intro": "This connector uses <strong>three independent APIs</strong> from Cisco Umbrella, each with its own credential and its own place in the admin panel. Generate all three before moving to the \"Configuration in Ruvic\" section. If one fails, the other two capabilities keep working normally.",
+        "section.configuracion_fabricante.api1_title": "API 1 — Investigate (query domain reputation)",
+        "section.configuracion_fabricante.api1_used_by": "Used by: <code>query_domain</code>. Read-only.",
+        "step.1.label": "Sign in to the Umbrella dashboard:",
+        "step.1.body": "log in at <code>dashboard.umbrella.com</code> with an administrator account.",
+        "step.2.label": "Go to Admin → API Keys → Umbrella Investigate:",
+        "step.2.body": "in the side menu, open <em>Admin</em> then <em>API Keys</em>; select the <em>Umbrella Investigate</em> tab or section.",
+        "step.3.label": "Create the token:",
+        "step.3.body": "click <em>Create</em> (or <em>Generate</em>) and copy the generated token immediately — Umbrella only shows it once. This token is used as a Bearer token.",
+        "img.investigate.placeholder": "[ Screenshot: Admin → API Keys → Umbrella Investigate — replace with assets/img/investigate-api-key.png ]",
+
+        "section.configuracion_fabricante.api2_title": "API 2 — Enforcement (add domains to the block list)",
+        "section.configuracion_fabricante.api2_used_by": "Used by: <code>add_to_blocklist</code>. Writes real data to the block policy.",
+        "step.4.label": "Go to Policies → Security Settings → Integrations:",
+        "step.4.body": "in the side menu, open <em>Policies</em>, then <em>Security Settings</em>, and find the <em>Integrations</em> section.",
+        "step.5.label": "Enable the Enforcement API:",
+        "step.5.body": "click <em>Enable</em> (if not already active). Umbrella generates a unique <strong>Customer Key</strong> for your organization.",
+        "step.6.label": "Copy the Customer Key:",
+        "step.6.body": "save it immediately in a password manager; it's the credential that authorizes writing block events.",
+        "img.enforcement.placeholder": "[ Screenshot: Policies → Security Settings → Integrations → Enforcement API — replace with assets/img/enforcement-key.png ]",
+
+        "section.configuracion_fabricante.api3_title": "API 3 — Reporting v2 (query recent activity)",
+        "section.configuracion_fabricante.api3_used_by": "Used by: <code>get_activity</code>. Read-only, uses OAuth2 client credentials.",
+        "step.7.label": "Go to Admin → API Keys → Umbrella Reporting/Management:",
+        "step.7.body": "in the side menu, open <em>Admin</em> → <em>API Keys</em> and select the <em>Umbrella Reporting/Management</em> section.",
+        "step.8.label": "Create a key with the Read-Only Reporting role:",
+        "step.8.body": "click <em>Create</em>, choose the <strong>Read-Only Reporting</strong> scope/role (not an admin role), and confirm.",
+        "step.9.label": "Copy the Key + Secret pair:",
+        "step.9.body": "Umbrella shows a <em>Key</em> and a <em>Secret</em>; copy them immediately, the Secret won't be shown in full again. With this pair the connector obtains an OAuth2 access token automatically.",
+        "img.reporting.placeholder": "[ Screenshot: Admin → API Keys → Umbrella Reporting/Management — replace with assets/img/reporting-key.png ]",
+
+        "section.configuracion_fabricante.orgid_title": "Organization ID",
+        "section.configuracion_fabricante.orgid_body": "Visible under <strong>Admin → Account Settings</strong>, or in the dashboard URL itself while browsing inside your organization (pattern <code>/o/&lt;org_id&gt;/</code>). It's a number, not a secret credential, but it's required for <code>get_activity</code>.",
+
+        "section.permisos": "Required permissions",
+        "section.permisos.intro": "Least-privilege principle: each of the three credentials only needs the minimum scope for its capability. Do not use accounts or roles with full organization admin permissions.",
+        "table.credencial": "Credential",
+        "table.alcance_minimo": "Minimum scope",
+        "table.para_que": "What the connector uses it for",
+        "permisos.investigate.cred": "Investigate API Key",
+        "permisos.investigate.scope": "Read-only — reputation/categorization lookups, no access to policies or users",
+        "permisos.enforcement.cred": "Enforcement Customer Key",
+        "permisos.enforcement.scope": "Adding destinations to the block list only; does not manage full policies or organization users",
+        "permisos.reporting.cred": "Reporting Key + Secret",
+        "permisos.reporting.scope": "<strong>Read-Only Reporting</strong> role — no organization admin permissions",
+        "permisos.callout_title": "Independent credentials",
+        "permisos.callout_body": "The three credentials are independent of each other: if one fails or is revoked, the capabilities based on the other two keep working normally.",
+
+        "section.configuracion_ruvic": "Configuration in Ruvic",
+        "configuracion_ruvic.intro": "Go to <strong>Settings → Connectors</strong>, find the <strong>Cisco Umbrella</strong> card and click <strong>Configure</strong>. Fill in the form's six fields using the values you obtained in the previous section:",
+        "table.campo_formulario": "Form field",
+        "table.valor": "Value",
+        "ruvic.field.investigate": "Investigate API Key",
+        "ruvic.field.investigate.value": "The token generated at Admin → API Keys → Umbrella Investigate (step 3 of the previous section)",
+        "ruvic.field.enforcement": "Enforcement Customer Key",
+        "ruvic.field.enforcement.value": "The Customer Key from Policies → Security Settings → Integrations → Enforcement API",
+        "ruvic.field.reporting_key": "Reporting API Key",
+        "ruvic.field.reporting_key.value": "The Key from the pair generated with the Read-Only Reporting role",
+        "ruvic.field.reporting_secret": "Reporting API Secret",
+        "ruvic.field.reporting_secret.value": "The Secret from the same pair. Stored encrypted as a secret: the UI will never display it again",
+        "ruvic.field.org_id": "Organization ID",
+        "ruvic.field.org_id.value": "Your organization's ID (Admin → Account Settings or the dashboard URL)",
+        "ruvic.field.timeout": "Connection timeout",
+        "ruvic.field.timeout.value": "Optional; defaults to <code>15</code> seconds",
+        "ruvic.save_body": "Save and click <span class=\"ruvic-button\">Test connection</span> — the platform queries a reference domain (<code>cisco.com</code>) via the Investigate API to confirm at least that credential works.",
+        "img.ruvic_form.placeholder": "[ Screenshot: Cisco Umbrella connector form in Settings → Connectors — replace with assets/img/umbrella-form.png ]",
+
+        "section.verificacion": "Verification",
+        "verif.1.label": "Successful connection test.",
+        "verif.1.body": "The <em>Test connection</em> button performs a <code>query_domain(\"cisco.com\")</code> via the Investigate API. If it returns categorization data, the connector card switches to <strong>Configured</strong>. This test only validates the Investigate API Key; the other two credentials are validated the first time they're used.",
+        "verif.2.label": "Test with the agent.",
+        "verif.2.body": "Open a new conversation with the agent and ask:",
+        "verif.2.quote": "\"Check the reputation of the domain cisco.com in Umbrella.\"",
+        "verif.2.body2": "The agent should reply with the <code>status</code> (-1 malicious, 0 unknown, 1 benign) and security categories, if any. If it does, the Investigate API is fully operational end to end.",
+        "verif.3.label": "Optional test of the other two APIs.",
+        "verif.3.body": "Ask the agent to \"review network activity in the last 24 hours\" to validate the Reporting API. Only test <code>add_to_blocklist</code> with a test domain, and only if you understand it changes the real block policy.",
+
+        "section.solucion_problemas": "Troubleshooting",
+        "table.mensaje_sintoma": "Message / symptom",
+        "table.causa_solucion": "Likely cause and fix",
+        "troubleshoot.1.symptom": "\"Invalid credentials or insufficient permission\" when querying a domain",
+        "troubleshoot.1.fix": "The Investigate API Key is failing: expired, revoked, or mistyped. Generate a new token at Admin → API Keys → Umbrella Investigate and update it in the connector form.",
+        "troubleshoot.2.symptom": "\"Invalid credentials\" when trying to block a domain, even though query_domain works",
+        "troubleshoot.2.fix": "The Enforcement Customer Key specifically is failing (the three credentials are independent). Check that the Enforcement API is still enabled under Policies → Security Settings → Integrations and that the key in Ruvic is correct.",
+        "troubleshoot.3.symptom": "\"Invalid credentials\" when querying recent activity, even though the other two capabilities work",
+        "troubleshoot.3.fix": "The Reporting Key/Secret pair is incorrect or the role isn't Read-Only Reporting. Regenerate the pair at Admin → API Keys → Umbrella Reporting/Management and update both fields in the form.",
+        "troubleshoot.4.symptom": "Reporting OAuth2 token expired or invalid mid-session",
+        "troubleshoot.4.fix": "The connector automatically renews the access token 30 seconds before it expires; if the error persists, the configured Reporting Key/Secret is no longer valid — regenerate it following the previous point.",
+        "troubleshoot.5.symptom": "\"Could not reach Cisco Umbrella\" (network timeout)",
+        "troubleshoot.5.fix": "The Ruvic platform couldn't connect in time to investigate.api.umbrella.com, s-platform.api.opendns.com, or api.umbrella.com. Retry; if it persists, increase the connection timeout in the form or check Cisco Umbrella's service status.",
+        "troubleshoot.6.symptom": "The connector shows \"Not configured\" after saving",
+        "troubleshoot.6.fix": "A required field was left empty (all six fields except timeout are required). Open it again and fill in investigate_api_key, enforcement_customer_key, reporting_key, reporting_secret, and org_id.",
+
+        "section.faq_seguridad": "FAQ and security notes",
+        "faq.q1": "Can the agent change my security policy without me knowing?",
+        "faq.a1": "Only through <code>add_to_blocklist</code>, which adds a real domain to your organization's block list. The connector's SKILL instructs the agent to confirm with you before running this action if you didn't explicitly ask for it, and to show you the <code>query_domain</code> result first when reasonable. <code>query_domain</code> and <code>get_activity</code> are strictly read-only and never change your configuration.",
+        "faq.q2": "Where are the three credentials stored?",
+        "faq.a2": "As secrets in the platform's credential store, tied to your user. The UI never shows them in full again; it only indicates \"set\". To change one, type the new value in the corresponding field; to keep the others, leave them empty while editing.",
+        "faq.q3": "How do I rotate each credential?",
+        "faq.a3": "<ul><li><strong>Investigate API Key:</strong> generate a new token at Admin → API Keys → Umbrella Investigate and revoke the old one; update it in the connector form.</li><li><strong>Enforcement Customer Key:</strong> rotate it by disabling and re-enabling the Enforcement API under Policies → Security Settings → Integrations (this generates a new Customer Key).</li><li><strong>Reporting Key/Secret:</strong> create a new pair at Admin → API Keys → Umbrella Reporting/Management with the Read-Only Reporting role, update it in Ruvic, then revoke the old pair.</li></ul>",
+        "faq.a3b": "We recommend rotating each credential every 90 days or per your internal security policy.",
+        "faq.q4": "One of the three credentials was compromised — what do I do?",
+        "faq.a4": "<ol><li>Immediately revoke that specific credential in the Umbrella panel (the other two are unaffected, they're independent).</li><li>Review the associated recent activity in Umbrella's logs (Reporting or the Enforcement event log, as applicable).</li><li>Generate a new credential following the steps in the \"Vendor / provider setup\" section and update it in the connector form.</li><li>If the compromised credential was the Enforcement Customer Key, verify no unauthorized blocks were added to your policy.</li></ol>",
+        "faq.q5": "Does add_to_blocklist affect real users on my network?",
+        "faq.a5": "Yes. Adding a domain to the block list via the Enforcement API changes the real security policy that Umbrella enforces on your organization's devices and users: any attempt to reach that domain will be blocked immediately. It is not a simulation or a test environment.",
+        "faq.callout_title": "Best practices",
+        "faq.callout_body": "Generate each credential with the minimum scope listed in the permissions section; never share the keys over insecure channels; periodically review events added via add_to_blocklist; and treat the compromise of any one credential as a security incident independent of the other two.",
+      },
+    };
+    /* El portal aplica el idioma del usuario (localStorage ruvic-docs-lang)
+       y actualiza [data-i18n], [data-i18n-placeholder] y [data-i18n-alt]. */
+  </script>
+</body>
+</html>

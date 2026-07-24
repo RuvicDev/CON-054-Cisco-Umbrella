@@ -1,0 +1,76 @@
+{
+  "id": "umbrella",
+  "name": "Cisco Umbrella",
+  "name_en": "Cisco Umbrella",
+  "version": "1.0.0",
+  "description": "Seguridad DNS y filtrado web con Cisco Umbrella: consultar reputación de un dominio, agregarlo a la lista de bloqueo y consultar actividad reciente",
+  "description_en": "DNS security and web filtering with Cisco Umbrella: query a domain's reputation, add it to the block list and query recent activity",
+  "icon": "icon.svg",
+  "category": "security",
+  "category_en": "security",
+  "keywords": ["cisco umbrella", "umbrella", "dns", "ciberseguridad", "cybersecurity", "filtrado web", "web filtering", "dominio", "domain", "bloqueo", "blocklist"],
+  "library": {
+    "package": "ruvic-umbrella-connector",
+    "install": "pip install git+https://github.com/Dgirto/Cisco-Umbrella.git#subdirectory=lib",
+    "import_name": "ruvic_umbrella_connector"
+  },
+  "auth_modes": [
+    {
+      "id": "api_keys",
+      "label": "API Keys (Investigate + Enforcement + Reporting)",
+      "fields": [
+        {
+          "key": "investigate_api_key",
+          "label": "Investigate API Key",
+          "type": "password",
+          "secret": true,
+          "required": true,
+          "help_text": "Genera este token en Admin → API Keys → Umbrella Investigate. Se usa para consultar reputación y categorización de dominios."
+        },
+        {
+          "key": "enforcement_customer_key",
+          "label": "Enforcement Customer Key",
+          "type": "password",
+          "secret": true,
+          "required": true,
+          "help_text": "Genera esta clave en Policies → Security Settings → Integrations → Enforcement API. Se usa para agregar dominios a la lista de bloqueo."
+        },
+        {
+          "key": "reporting_key",
+          "label": "Reporting API Key",
+          "type": "text",
+          "required": true,
+          "help_text": "Genera este par (Key + Secret) en Admin → API Keys → Umbrella Reporting/Management (Reporting API v2, OAuth2 client credentials)."
+        },
+        {
+          "key": "reporting_secret",
+          "label": "Reporting API Secret",
+          "type": "password",
+          "secret": true,
+          "required": true
+        },
+        {
+          "key": "org_id",
+          "label": "Organization ID",
+          "type": "text",
+          "required": true,
+          "help_text": "Visible en Admin → Account Settings, o en la URL del dashboard de Umbrella"
+        },
+        {
+          "key": "connect_timeout",
+          "label": "Timeout de conexión (segundos)",
+          "type": "number",
+          "required": false,
+          "default": "15"
+        }
+      ]
+    }
+  ],
+  "env_prefix": "RUVIC_UMBRELLA_",
+  "operations": ["security.query_domain", "security.add_to_blocklist", "security.get_activity"],
+  "test_connection": true,
+  "docs": {
+    "skill": "SKILL.md",
+    "permissions_note": "Genera las tres credenciales con el mínimo alcance posible: la Investigate API Key solo permite consultas de reputación (solo lectura); la Enforcement Customer Key permite agregar destinos a la lista de bloqueo pero no administra políticas ni usuarios; la Reporting API Key/Secret usan el rol de solo lectura de reportes (Read-Only Reporting), sin permisos de administración de la organización."
+  }
+}
