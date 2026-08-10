@@ -26,8 +26,8 @@ from .logging_utils import get_logger
 
 _INVESTIGATE_BASE = "https://investigate.api.umbrella.com"
 _ENFORCEMENT_BASE = "https://s-platform.api.opendns.com/1.0"
-_REPORTING_AUTH_URL = "https://api.umbrella.com/auth/v2/token"
-_REPORTING_BASE = "https://api.umbrella.com/reports/v2"
+_REPORTING_AUTH_URL = "https://management.api.umbrella.com/auth/v2/oauth2/token"
+_REPORTING_BASE = "https://reports.api.umbrella.com/v2"
 
 
 class UmbrellaClient:

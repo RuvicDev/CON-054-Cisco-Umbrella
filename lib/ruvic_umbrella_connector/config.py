@@ -31,7 +31,7 @@ class UmbrellaConfig:
     connect_timeout: int = 15
 
     @classmethod
-    def from_env(cls) -> "UmbrellaConfig":
+    def from_env(cls) -> UmbrellaConfig:
         """Construye la configuración desde las variables RUVIC_UMBRELLA_*.
 
         Raises:
