@@ -30,6 +30,20 @@ _REPORTING_AUTH_URL = "https://management.api.umbrella.com/auth/v2/oauth2/token"
 _REPORTING_BASE = "https://reports.api.umbrella.com/v2"
 
 
+def _require_str(value: Any, field: str) -> str:
+    if not isinstance(value, str):
+        raise UmbrellaDataError(f"{field} debe ser un string, no {type(value).__name__}.")
+    return value
+
+
+def _require_positive_int(value: Any, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise UmbrellaDataError(f"{field} debe ser un entero, no {type(value).__name__}.")
+    if value <= 0:
+        raise UmbrellaDataError(f"{field} debe ser mayor a 0.")
+    return value
+
+
 class UmbrellaClient:
     """Cliente de seguridad DNS y filtrado web en Cisco Umbrella.
 
@@ -105,7 +119,7 @@ class UmbrellaClient:
             >>> client.query_domain("evil-example.com")
             {'status': -1, 'securityCategories': ['Malware'], ...}
         """
-        domain = (domain or "").strip().lower()
+        domain = _require_str(domain, "domain").strip().lower()
         if not domain:
             raise UmbrellaDataError("domain no puede estar vacío.")
         response = self._request(
@@ -137,7 +151,7 @@ class UmbrellaClient:
             >>> client.add_to_blocklist("evil-example.com")
             {'id': '...', 'disposition': 'added', ...}
         """
-        domain = (domain or "").strip().lower()
+        domain = _require_str(domain, "domain").strip().lower()
         if not domain:
             raise UmbrellaDataError("domain no puede estar vacío.")
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -197,10 +211,8 @@ class UmbrellaClient:
             >>> client.get_activity(hours=1, limit=10)
             [{'timestamp': ..., 'domain': 'evil-example.com', 'verdict': 'Blocked', ...}]
         """
-        if hours <= 0:
-            raise UmbrellaDataError("hours debe ser mayor a 0.")
-        if limit <= 0:
-            raise UmbrellaDataError("limit debe ser mayor a 0.")
+        hours = _require_positive_int(hours, "hours")
+        limit = _require_positive_int(limit, "limit")
         token = self._get_reporting_token()
         now_ms = int(time.time() * 1000)
         from_ms = now_ms - hours * 3600 * 1000
